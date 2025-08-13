@@ -7,6 +7,7 @@ class ExactContentEndpoint extends BaseEndpoint
 {
     public function handle()
     {
+        
         // 获取GET参数，完全按照原文件
         $item_id = $_GET['item_ids'] ?? null;
         $ts = $_GET['ts'] ?? null;

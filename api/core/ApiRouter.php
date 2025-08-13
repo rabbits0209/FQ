@@ -11,6 +11,7 @@ class ApiRouter
         'content' => 'ExactContentEndpoint',  // 使用完全按照原文件逻辑的版本
         'chapter' => 'ContentEndpoint', // index.php的功能
         'manga' => 'MangaEndpoint', // 新增漫画接口
+        'raw_full' => 'ContentEndpoint', // 新增raw_full接口，分发到ContentEndpoint
         
         // 信息类API  
         'book' => 'BookEndpoint',

@@ -10,6 +10,21 @@ class DeviceRegisterEndpoint extends BaseEndpoint
     public function handle()
     {
         $action = $_GET['action'] ?? 'register';
+        if (!in_array($action, ['register', 'status', 'refresh'])) {
+            $authFile = $_SERVER['DOCUMENT_ROOT'] . '/auth/auth.json';
+            if (!file_exists($authFile)) {
+                $this->sendError(401, '授权文件不存在');
+            }
+            $authData = json_decode(file_get_contents($authFile), true);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                $this->sendError(401, '授权文件解析失败');
+            }
+            $validator = new \AuthValidator();
+            $authResult = $validator->validateAuthAll($authData);
+            if (!$authResult['valid']) {
+                $this->sendError(401, '授权验证失败', $authResult['message']);
+            }
+        }
         
         try {
             switch ($action) {

@@ -9,9 +9,13 @@ class ContentEndpoint extends BaseEndpoint
 {
     public function handle()
     {
-        // 判断API类型：通过路由检测是chapter还是content
         $api = $_GET['api'] ?? $this->detectApiType();
         
+        if ($api === 'raw_full') {
+            $this->handleRawFullApi();
+            return;
+        }
+
         if ($api === 'chapter') {
             // 处理原index.php的简单API（番茄开放SDK）
             $this->handleChapterApi();
@@ -288,5 +292,77 @@ class ContentEndpoint extends BaseEndpoint
             }
             $this->sendSuccess(['chapters' => $chapter_list]);
         }
+    }
+
+    /**
+     * 新增：处理原始full API并解密图片内容
+     * 访问方式：api.php?api=raw_full&item_id=xxx
+     */
+    public function handleRawFullApi()
+    {
+        $item_id = $_GET['item_id'] ?? null;
+        if (!$item_id) {
+            $this->sendError(400, '缺少item_id参数');
+        }
+        $deviceKeys = $this->getDeviceKeys();
+        $zwkey1 = $deviceKeys['secret_key'];  // 密钥
+        $zwkey2 = $deviceKeys['device_id'];   // 设备ID
+        $url = "https://reading.snssdk.com/reading/reader/full/v/?aid=1967&app_name=novelapp&channel=0&device_platform=android&device_id={$zwkey2}&device_type=Honor10&item_id={$item_id}&os_version=0&version_code=66.9";
+        $query_string = parse_url($url, PHP_URL_QUERY);
+        $xg_data = $this->algorithmManager->generateXGorgon($query_string);
+        $response = $this->curlRequest($url, [
+            'X-Gorgon: '.$xg_data['x_gorgon'],
+            'X-Khronos: '.$xg_data['timestamp'],
+            'User-Agent: com.dragon.read'
+        ]);
+        $responseData = json_decode($response, true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            $this->sendError(500, 'JSON解析失败: ' . json_last_error_msg());
+        }
+        if (empty($responseData['data']['content'])) {
+            $this->sendError(500, '响应中缺少data.content字段');
+        }
+        $output = [
+            'data' => [
+                'content' => $this->decrypt($responseData['data']['content'], $zwkey1)
+            ]
+        ];
+        // 以下为漫画new.txt的图片处理逻辑
+        if (stripos($output['data']['content'], 'picInfos')!== false) {
+            // 1. 从内容中提取所有MD5值（格式为"md5":"xxx"）
+            preg_match_all('/"md5":"([a-f0-9]+)"/', $output['data']['content'], $matches);
+            $md5_values = $matches[1];
+            // 2. 获取第一个MD5值用于路径验证
+            $firstMd5 = $md5_values[0];
+            // 3. 定义基础域名和初始路径
+            $baseDomain = "https://p6-novel.byteimg.com/origin/";
+            $currentPath = "novel-images/"; // 优先尝试images路径
+            $testUrl = $baseDomain. $currentPath. $firstMd5; // 拼接测试URL
+            // 4. 使用curl请求测试URL并获取响应
+            $curl = curl_init($testUrl);
+            curl_setopt($curl, CURLOPT_RETURNTRANSFER, true); // 响应内容返回而非输出
+            curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, false); // 测试用，生产环境需开启SSL验证
+            curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, 8); // 8秒超时
+            $response = curl_exec($curl);
+            curl_close($curl);
+            // 5. 验证响应是否为JSON格式（无效路径通常返回JSON错误信息）
+            $isJsonResponse = json_decode($response)!== null;
+            if ($isJsonResponse) {
+                $currentPath = "novel-pic/"; // 切换到pic路径
+            }
+            // 6. 确定有效路径前缀
+            $validUrlPrefix = $baseDomain. $currentPath;
+            // 7. 生成所有图片标签
+            for ($i = 0; $i < count($md5_values); $i++) {
+                $md5_values[$i] = '<img src="'. $validUrlPrefix. $md5_values[$i]. '" >';
+            }
+            // 8. 构建输出结果
+            $output = array(
+                'data' => array(
+                    'content' => implode('', $md5_values)
+                )
+            );
+        }
+        $this->sendSuccess($output['data']);
     }
 }

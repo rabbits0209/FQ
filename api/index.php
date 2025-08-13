@@ -9,7 +9,7 @@ header('Access-Control-Allow-Origin: *');
 
 // 自动加载核心类
 spl_autoload_register(function ($class) {
-    $dirs = ['core', 'algorithms', 'endpoints', 'devices'];
+    $dirs = ['core', 'auth', 'algorithms', 'endpoints', 'devices'];
     foreach ($dirs as $dir) {
         $file = __DIR__ . "/{$dir}/{$class}.php";
         if (file_exists($file)) {
